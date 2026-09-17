@@ -113,7 +113,9 @@ def test_memory_store_blocked_by_policy_writes_nothing(tmp_path: Path) -> None:
         assert policy.tracer is not None
         records = policy.tracer.records
         blocked_rec = next(
-            r for r in records if r.kind == EventKind.MEMORY_WRITE and r.payload.get("blocked") is True
+            r
+            for r in records
+            if r.kind == EventKind.MEMORY_WRITE and r.payload.get("blocked") is True
         )
         assert blocked_rec.actor == "custom-writer"
         assert blocked_rec.payload["blocked"] is True

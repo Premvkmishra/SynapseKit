@@ -138,7 +138,10 @@ class MemorySearchTool(BaseTool):
         "properties": {
             "query": {"type": "string", "description": "Search query."},
             "top_k": {"type": "integer", "description": "Maximum ranked hits to return."},
-            "actor": {"type": "string", "description": "Identifier of the MCP client/user making the read."},
+            "actor": {
+                "type": "string",
+                "description": "Identifier of the MCP client/user making the read.",
+            },
         },
         "required": ["query"],
     }
@@ -180,7 +183,10 @@ class MemoryRecallTool(BaseTool):
         "properties": {
             "query": {"type": "string", "description": "Search query."},
             "top_k": {"type": "integer", "description": "Maximum ranked hits to return."},
-            "actor": {"type": "string", "description": "Identifier of the MCP client/user making the read."},
+            "actor": {
+                "type": "string",
+                "description": "Identifier of the MCP client/user making the read.",
+            },
         },
         "required": ["query"],
     }
@@ -222,7 +228,9 @@ class MemoryStoreTool(BaseTool):
     """Store a new personal memory item, gated by policy and recorded in the audit trail."""
 
     name = "memory_store"
-    description = "Store a new personal memory item, gated by policy and recorded in the audit trail."
+    description = (
+        "Store a new personal memory item, gated by policy and recorded in the audit trail."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -232,7 +240,10 @@ class MemoryStoreTool(BaseTool):
                 "type": "string",
                 "description": "One of: user, feedback, project, reference, general.",
             },
-            "actor": {"type": "string", "description": "Identifier of the MCP client/user making the write."},
+            "actor": {
+                "type": "string",
+                "description": "Identifier of the MCP client/user making the write.",
+            },
         },
         "required": ["content"],
     }
