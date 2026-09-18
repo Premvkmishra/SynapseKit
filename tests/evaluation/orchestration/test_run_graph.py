@@ -49,6 +49,12 @@ async def test_run_graph_from_handoff_result() -> None:
 
     assert graph.agent_sequence() == ["triage", "billing"]
 
+    # Regression: HandoffChain.run now stamps each history entry with a
+    # timestamp, so RunNode.timestamp should no longer be silently None
+    # for graphs built from real HandoffResult objects.
+    assert graph.nodes[0].timestamp is not None
+    assert graph.nodes[1].timestamp is not None
+
 
 def test_run_graph_from_events() -> None:
     events = [

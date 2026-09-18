@@ -12,12 +12,12 @@ if TYPE_CHECKING:
 
 
 def _nearest_node_for_agent(
-    node_records: list[tuple[int, "RunNode"]],
+    node_records: list[tuple[int, RunNode]],
     agent: str,
     event_idx: int,
     *,
     prefer_before: bool,
-) -> "RunNode | None":
+) -> RunNode | None:
     """Find the node for ``agent`` closest to ``event_idx`` in event order.
 
     Used to resolve a handoff event's source/target node by matching agent
@@ -89,7 +89,15 @@ class RunGraph:
         goal: str = "",
         run_id: str | None = None,
     ) -> RunGraph:
-        """Adapt a HandoffResult into a RunGraph."""
+        """Adapt a HandoffResult into a RunGraph.
+
+        ``HandoffChain.run`` history entries only carry ``agent``/``input``/
+        ``output``/``timestamp`` — there is no structured per-step ``context``
+        concept in :class:`HandoffChain`, so ``RunNode.context`` stays empty
+        unless the caller populates a ``"context"`` key in ``result.history``
+        itself. ``ContextLossDetector`` still works in that case via its
+        ``input_text``/``output_text`` fallback.
+        """
         r_id = run_id or f"run_{uuid.uuid4().hex[:8]}"
         nodes: list[RunNode] = []
         transfers: list[Transfer] = []
