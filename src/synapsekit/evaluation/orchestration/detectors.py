@@ -41,7 +41,11 @@ class LoopDetector:
     def detect(self, graph: RunGraph) -> list[DetectorFinding]:
         findings: list[DetectorFinding] = []
         seq = graph.agent_sequence()
-        nodes_by_step = {n.step: n for n in graph.nodes}
+        # `seq`/cycle spans are positional indices (agent_sequence() sorts by
+        # .step), not raw .step values — index into the same sorted list so a
+        # sparse/non-contiguous .step numbering doesn't drop nodes from a
+        # detected cycle's evidence.
+        sorted_nodes = sorted(graph.nodes, key=lambda n: n.step)
         transfers_by_step = {i: t for i, t in enumerate(graph.transfers)}
 
         # 1. Exact periodic cycle detection
@@ -67,9 +71,8 @@ class LoopDetector:
                     detected_cycle_spans.add(span)
 
                     cycle_node_ids = [
-                        nodes_by_step[step].id
-                        for step in range(span[0], min(span[1], len(nodes_by_step)))
-                        if step in nodes_by_step
+                        sorted_nodes[pos].id
+                        for pos in range(span[0], min(span[1], len(sorted_nodes)))
                     ]
                     cycle_transfer_ids = [
                         transfers_by_step[step].id
@@ -99,7 +102,6 @@ class LoopDetector:
                     )
 
         # 2. Stalled loop detection (near-duplicate input for same agent across non-adjacent steps)
-        sorted_nodes = sorted(graph.nodes, key=lambda n: n.step)
         for i in range(len(sorted_nodes)):
             for j in range(i + 2, len(sorted_nodes)):
                 node_i = sorted_nodes[i]

@@ -16,6 +16,7 @@ from synapsekit.evaluation.orchestration.detectors import (
     LoopDetector,
     MisroutingDetector,
 )
+from synapsekit.evaluation.orchestration.run_graph import RunGraph, RunNode, Transfer
 from synapsekit.llm.base import BaseLLM
 
 
@@ -45,6 +46,42 @@ def test_loop_detector_fires_on_looping_fixture() -> None:
     assert finding.severity == "critical"
     assert len(finding.node_ids) > 0
     assert "cycle" in finding.evidence or "similarity" in finding.evidence
+
+
+def test_loop_detector_handles_sparse_step_numbering() -> None:
+    # Regression: cycle node_ids used to be looked up via nodes_by_step[step]
+    # keyed by raw RunNode.step, but the cycle span is a *positional* index
+    # into agent_sequence() (sorted by step). With non-contiguous step values
+    # this silently dropped most nodes from the finding's evidence.
+    agents = ["triage", "specialist", "triage", "specialist"]
+    nodes = [
+        RunNode(
+            id=f"sparse_node_{i}",
+            agent=agent,
+            step=i * 5,  # non-contiguous: 0, 5, 10, 15
+            input_text=f"input {i}",
+            output_text=f"output {i}",
+        )
+        for i, agent in enumerate(agents)
+    ]
+    transfers = [
+        Transfer(
+            id=f"sparse_transfer_{i}",
+            source=nodes[i].id,
+            target=nodes[i + 1].id,
+            from_agent=nodes[i].agent,
+            to_agent=nodes[i + 1].agent,
+        )
+        for i in range(len(nodes) - 1)
+    ]
+    graph = RunGraph(run_id="sparse_run", goal="", nodes=nodes, transfers=transfers)
+
+    detector = LoopDetector(min_cycle_repeats=2, max_cycle_length=2)
+    findings = detector.detect(graph)
+
+    cycle_findings = [f for f in findings if "cycle" in f.evidence]
+    assert len(cycle_findings) >= 1
+    assert set(cycle_findings[0].node_ids) == {n.id for n in nodes}
 
 
 def test_loop_detector_silent_on_healthy_fixture() -> None:
