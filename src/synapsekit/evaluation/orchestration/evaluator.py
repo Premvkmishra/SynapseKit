@@ -74,7 +74,12 @@ class OrchestrationEvaluator:
         graph_list = [graphs] if isinstance(graphs, RunGraph) else list(graphs)
 
         try:
-            from ...live import publish, publish_graph
+            from ...live import _maybe_autostart, publish, publish_graph
+
+            # Mirrors observe/runtime.py and dream/core.py: cheap no-op after the
+            # first call, but without it SYNAPSEKIT_LIVE=1 alone never flips
+            # bus.enabled on and every publish() below silently no-ops.
+            _maybe_autostart()
 
             top_findings = [asdict(f) for f in report.findings[:5]]
             publish(
@@ -91,9 +96,17 @@ class OrchestrationEvaluator:
             )
 
             if graph_list:
-                nodes, edges = graph_list[0].to_live_graph(findings=report.findings)
-                publish_graph(nodes, edges)
-        except Exception:  # pragma: no cover
+                # Node/edge ids are run_id-prefixed by construction, so combining
+                # every evaluated graph into one snapshot is collision-free and
+                # avoids silently dropping visualization for all but the first run.
+                all_nodes: list[dict[str, Any]] = []
+                all_edges: list[dict[str, Any]] = []
+                for g in graph_list:
+                    g_nodes, g_edges = g.to_live_graph(findings=report.findings)
+                    all_nodes.extend(g_nodes)
+                    all_edges.extend(g_edges)
+                publish_graph(all_nodes, all_edges)
+        except ImportError:  # pragma: no cover - live dashboard extra not installed
             pass
 
         return report
