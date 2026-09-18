@@ -11,6 +11,34 @@ if TYPE_CHECKING:
     from .detectors import DetectorFinding
 
 
+def _nearest_node_for_agent(
+    node_records: list[tuple[int, "RunNode"]],
+    agent: str,
+    event_idx: int,
+    *,
+    prefer_before: bool,
+) -> "RunNode | None":
+    """Find the node for ``agent`` closest to ``event_idx`` in event order.
+
+    Used to resolve a handoff event's source/target node by matching agent
+    name against the surrounding node events, instead of assuming a fixed
+    positional offset (which breaks whenever a handoff isn't immediately
+    sandwiched between exactly one node event on each side).
+    """
+    candidates = [(idx, node) for idx, node in node_records if node.agent == agent]
+    if not candidates:
+        return None
+    if prefer_before:
+        before = [c for c in candidates if c[0] <= event_idx]
+        if before:
+            return before[-1][1]
+        return candidates[0][1]
+    after = [c for c in candidates if c[0] >= event_idx]
+    if after:
+        return after[0][1]
+    return candidates[-1][1]
+
+
 @dataclass(slots=True)
 class RunNode:
     """A single execution node within a run graph."""
@@ -118,10 +146,15 @@ class RunGraph:
         goal = ""
         nodes: list[RunNode] = []
         transfers: list[Transfer] = []
+        # (event_index, node) so transfer endpoints can be resolved by agent name
+        # against the events they actually straddle, instead of by position.
+        node_records: list[tuple[int, RunNode]] = []
+        # Raw transfer descriptors, resolved to node ids after all nodes are known.
+        pending_transfers: list[dict[str, Any]] = []
 
         step_counter = 0
 
-        for event in events:
+        for event_idx, event in enumerate(events):
             if not isinstance(event, dict):
                 continue
 
@@ -152,27 +185,47 @@ class RunGraph:
                     timestamp=event.get("ts"),
                 )
                 nodes.append(node)
+                node_records.append((event_idx, node))
                 step_counter += 1
 
             # Handle transfer-like events
             from_agent = event.get("from_agent") or attrs.get("from_agent")
             to_agent = event.get("to_agent") or attrs.get("to_agent")
             if from_agent and to_agent:
-                src_id = f"{r_id}_node_{max(0, step_counter - 2)}" if nodes else "src"
-                tgt_id = f"{r_id}_node_{max(0, step_counter - 1)}" if nodes else "tgt"
                 t_ctx = event.get("context_sent") or attrs.get("context_sent") or {}
-                transfers.append(
-                    Transfer(
-                        id=f"{r_id}_transfer_{len(transfers)}",
-                        source=src_id,
-                        target=tgt_id,
-                        from_agent=str(from_agent),
-                        to_agent=str(to_agent),
-                        reason=str(event.get("reason") or attrs.get("reason", "")),
-                        context_sent=t_ctx if isinstance(t_ctx, dict) else {},
-                        timestamp=event.get("ts"),
-                    )
+                pending_transfers.append(
+                    {
+                        "event_idx": event_idx,
+                        "from_agent": str(from_agent),
+                        "to_agent": str(to_agent),
+                        "reason": str(event.get("reason") or attrs.get("reason", "")),
+                        "context_sent": t_ctx if isinstance(t_ctx, dict) else {},
+                        "timestamp": event.get("ts"),
+                    }
                 )
+
+        for pt in pending_transfers:
+            event_idx = pt["event_idx"]
+            src_node = _nearest_node_for_agent(
+                node_records, pt["from_agent"], event_idx, prefer_before=True
+            )
+            tgt_node = _nearest_node_for_agent(
+                node_records, pt["to_agent"], event_idx, prefer_before=False
+            )
+            src_id = src_node.id if src_node is not None else "src"
+            tgt_id = tgt_node.id if tgt_node is not None else "tgt"
+            transfers.append(
+                Transfer(
+                    id=f"{r_id}_transfer_{len(transfers)}",
+                    source=src_id,
+                    target=tgt_id,
+                    from_agent=pt["from_agent"],
+                    to_agent=pt["to_agent"],
+                    reason=pt["reason"],
+                    context_sent=pt["context_sent"],
+                    timestamp=pt["timestamp"],
+                )
+            )
 
         # If events created nodes but no transfers were explicitly in events, link adjacent nodes
         if nodes and not transfers:

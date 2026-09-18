@@ -89,6 +89,15 @@ def test_run_graph_from_events() -> None:
     assert graph.transfers[0].from_agent == "intake"
     assert graph.transfers[0].to_agent == "claims_processor"
 
+    # Regression: source/target must resolve to the actual intake/claims_processor
+    # nodes, not collapse into a self-loop on whichever node existed when the
+    # handoff event was processed.
+    intake_node = next(n for n in graph.nodes if n.agent == "intake")
+    claims_node = next(n for n in graph.nodes if n.agent == "claims_processor")
+    assert graph.transfers[0].source == intake_node.id
+    assert graph.transfers[0].target == claims_node.id
+    assert graph.transfers[0].source != graph.transfers[0].target
+
 
 def test_to_live_graph_formatting() -> None:
     node0 = RunNode(id="n0", agent="triage", step=0, input_text="a", output_text="b")
