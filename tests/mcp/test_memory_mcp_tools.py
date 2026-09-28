@@ -22,6 +22,7 @@ from synapsekit.mesh.mcp import (
     MemoryRecallTool,
     MemorySearchTool,
     MemoryStoreTool,
+    _redact_hit,
 )
 from synapsekit.ump.parser import UMPReader
 
@@ -158,6 +159,29 @@ def test_memory_search_redacts_pii_in_hits(tmp_path: Path) -> None:
         assert "[REDACTED:EMAIL]" in hit_text
 
     asyncio.run(run())
+
+
+def test_memory_search_redacts_pii_in_headings_and_metadata(tmp_path: Path) -> None:
+    config = MemoryMCPConfig(memory_root=tmp_path)
+    assert config.redactor is not None
+
+    # A hit whose PII lives in headings/metadata, not just the body text.
+    class _Hit:
+        text = "clean body"
+        score = 0.9
+        path = "notes.md"
+        line_start = 1
+        line_end = 2
+        headings = ("Contact bob@example.com",)
+        repo_root = None
+        metadata = {"snippet": "call SSN 123-45-6789", "path": "notes.md"}
+
+    redacted = json.dumps(_redact_hit(_Hit(), config.redactor))
+    assert "bob@example.com" not in redacted
+    assert "123-45-6789" not in redacted
+    assert "[REDACTED:EMAIL]" in redacted
+    # Structural citation fields are preserved.
+    assert "notes.md" in redacted
 
 
 def test_memory_recall_redacts_answer(tmp_path: Path) -> None:

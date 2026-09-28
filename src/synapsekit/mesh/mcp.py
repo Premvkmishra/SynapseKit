@@ -157,10 +157,7 @@ class MemorySearchTool(BaseTool):
         result = await self.mesh.query(query, top_k=int(top_k) if top_k is not None else None)
 
         assert self.config.redactor is not None
-        redacted_hits = [
-            {**hit_to_dict(hit), "text": self.config.redactor.redact_text(hit.text)}
-            for hit in result.hits
-        ]
+        redacted_hits = [_redact_hit(hit, self.config.redactor) for hit in result.hits]
 
         assert self.config.policy is not None
         if self.config.policy.tracer is not None:
@@ -202,10 +199,7 @@ class MemoryRecallTool(BaseTool):
         result = await self.mesh.query(query, top_k=int(top_k) if top_k is not None else None)
 
         assert self.config.redactor is not None
-        redacted_hits = [
-            {**hit_to_dict(hit), "text": self.config.redactor.redact_text(hit.text)}
-            for hit in result.hits
-        ]
+        redacted_hits = [_redact_hit(hit, self.config.redactor) for hit in result.hits]
         redacted_answer = self.config.redactor.redact_text(result.answer or "")
 
         assert self.config.policy is not None
@@ -367,3 +361,19 @@ def hit_to_dict(hit: Any) -> dict[str, Any]:
         "repo_root": hit.repo_root,
         "metadata": hit.metadata,
     }
+
+
+def _redact_hit(hit: Any, redactor: PIIRedactor) -> dict[str, Any]:
+    """Serialize a hit with PII redacted from every free-text field.
+
+    Structural citation fields (``path``, ``line_start``, ``line_end``,
+    ``score``) are preserved for citation utility; the body ``text``, section
+    ``headings``, and any string values inside ``metadata`` are redacted so PII
+    cannot leak through fields other than ``text``.
+    """
+
+    data = hit_to_dict(hit)
+    data["text"] = redactor.redact_text(data["text"])
+    data["headings"] = [redactor.redact_text(heading) for heading in data["headings"]]
+    data["metadata"] = redactor.redact_payload(data["metadata"])
+    return data
