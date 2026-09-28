@@ -4,10 +4,10 @@ import asyncio
 import base64
 import json
 import sys
+import types
 import zipfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -394,6 +394,67 @@ def test_backward_compatible_build_mesh_tools_default_args(tmp_path: Path) -> No
         assert name in tool_names
 
 
+class _FakeTextContent:
+    """Stand-in for ``mcp.types.TextContent``."""
+
+    def __init__(self, type: str, text: str) -> None:
+        self.type = type
+        self.text = text
+
+
+class _FakeTool:
+    """Stand-in for ``mcp.types.Tool``."""
+
+    def __init__(self, name: str, description: str, inputSchema: dict[str, Any]) -> None:  # noqa: N803
+        self.name = name
+        self.description = description
+        self.input_schema = inputSchema
+
+
+class _FakeResource:
+    """Stand-in for ``mcp.types.Resource``."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.__dict__.update(kwargs)
+
+
+class _FakeMCPServer:
+    """Records the handlers ``_build_server`` registers via its decorators."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.handlers: dict[str, Any] = {}
+
+    def _register(self, key: str) -> Any:
+        def decorator(fn: Any) -> Any:
+            self.handlers[key] = fn
+            return fn
+
+        return decorator
+
+    def list_tools(self) -> Any:
+        return self._register("list_tools")
+
+    def call_tool(self) -> Any:
+        return self._register("call_tool")
+
+    def list_resources(self) -> Any:
+        return self._register("list_resources")
+
+    def read_resource(self) -> Any:
+        return self._register("read_resource")
+
+
+def _install_fake_mcp() -> tuple[types.ModuleType, types.ModuleType]:
+    server_mod = types.ModuleType("mcp.server")
+    server_mod.Server = _FakeMCPServer  # type: ignore[attr-defined]
+    types_mod = types.ModuleType("mcp.types")
+    types_mod.TextContent = _FakeTextContent  # type: ignore[attr-defined]
+    types_mod.Tool = _FakeTool  # type: ignore[attr-defined]
+    types_mod.Resource = _FakeResource  # type: ignore[attr-defined]
+    return server_mod, types_mod
+
+
 def test_mcp_server_still_works_with_extended_mesh_tools(tmp_path: Path) -> None:
     root = tmp_path / "root"
     root.mkdir()
@@ -407,48 +468,37 @@ def test_mcp_server_still_works_with_extended_mesh_tools(tmp_path: Path) -> None
         )
     )
 
-    registered: dict[str, Any] = {}
-    mock_server_inst = MagicMock()
+    server_mod, types_mod = _install_fake_mcp()
+    saved = {k: sys.modules.get(k) for k in ("mcp.server", "mcp.types")}
+    sys.modules["mcp.server"] = server_mod
+    sys.modules["mcp.types"] = types_mod
+    try:
+        server = MCPServer(mesh)._build_server()
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = value
 
-    def decorator_factory(key: str):
-        def decorator(fn: Any) -> Any:
-            registered[key] = fn
-            return fn
-
-        return lambda: decorator
-
-    mock_server_inst.list_tools = decorator_factory("list_tools")
-    mock_server_inst.call_tool = decorator_factory("call_tool")
-    mock_server_inst.list_resources = decorator_factory("list_resources")
-    mock_server_inst.read_resource = decorator_factory("read_resource")
-
-    mock_server_mod = MagicMock()
-    mock_server_mod.Server = MagicMock(return_value=mock_server_inst)
-    mock_types = MagicMock()
-    mock_types.TextContent = MagicMock(side_effect=lambda type, text: (type, text))
-    mock_types.Tool = MagicMock()
-    mock_types.Resource = MagicMock()
-
-    with patch.dict(sys.modules, {"mcp.server": mock_server_mod, "mcp.types": mock_types}):
-        MCPServer(mesh)._build_server()
-
-    listed = asyncio.run(registered["list_tools"]())
+    handlers = server.handlers
+    listed = asyncio.run(handlers["list_tools"]())
     assert len(listed) == 7
 
     # Execute memory_store tool via call_tool handler
     res_store = asyncio.run(
-        registered["call_tool"](
+        handlers["call_tool"](
             name="memory_store",
             arguments={"content": "Server integration test", "name": "Server Test"},
         )
     )
-    assert "stored" in res_store[0][1]
+    assert "stored" in res_store[0].text
 
     # Execute memory_search tool via call_tool handler
     res_search = asyncio.run(
-        registered["call_tool"](
+        handlers["call_tool"](
             name="memory_search",
             arguments={"query": "Server integration"},
         )
     )
-    assert "hits" in res_search[0][1]
+    assert "hits" in res_search[0].text
