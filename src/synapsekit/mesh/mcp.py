@@ -158,6 +158,8 @@ class MemorySearchTool(BaseTool):
     async def run(self, **kwargs: Any) -> ToolResult:
         query = str(kwargs.get("query", ""))
         actor = str(kwargs.get("actor", "mcp-client"))
+        if not query.strip():
+            return ToolResult(output="", error="memory_search: query must not be empty")
         top_k = kwargs.get("top_k")
         result = await self.mesh.query(query, top_k=int(top_k) if top_k is not None else None)
 
@@ -200,6 +202,8 @@ class MemoryRecallTool(BaseTool):
     async def run(self, **kwargs: Any) -> ToolResult:
         query = str(kwargs.get("query", ""))
         actor = str(kwargs.get("actor", "mcp-client"))
+        if not query.strip():
+            return ToolResult(output="", error="memory_recall: query must not be empty")
         top_k = kwargs.get("top_k")
         result = await self.mesh.query(query, top_k=int(top_k) if top_k is not None else None)
 

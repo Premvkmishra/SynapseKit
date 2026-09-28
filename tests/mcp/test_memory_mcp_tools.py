@@ -284,6 +284,32 @@ def test_memory_read_and_write_emit_audit_records(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_memory_search_empty_query_returns_error(tmp_path: Path) -> None:
+    async def run() -> None:
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+        mesh = KnowledgeMesh(
+            MeshConfig(
+                roots=[memory_dir],
+                state_dir=tmp_path / "state",
+                vector_backend="memory",
+                graph_backend="memory",
+                use_git=False,
+            )
+        )
+        config = MemoryMCPConfig(memory_root=memory_dir)
+
+        search_res = await MemorySearchTool(mesh, config).run(query="   ")
+        assert search_res.is_error is True
+        assert "must not be empty" in search_res.error
+
+        recall_res = await MemoryRecallTool(mesh, config).run(query="")
+        assert recall_res.is_error is True
+        assert "must not be empty" in recall_res.error
+
+    asyncio.run(run())
+
+
 def test_export_audit_bundle_produces_verifiable_receipt(tmp_path: Path) -> None:
     async def run() -> None:
         memory_dir = tmp_path / "memory"
