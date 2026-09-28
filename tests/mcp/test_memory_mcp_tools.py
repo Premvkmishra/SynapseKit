@@ -217,6 +217,30 @@ def test_memory_recall_redacts_answer(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_memory_store_rejects_invalid_memory_type(tmp_path: Path) -> None:
+    async def run() -> None:
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+        mesh = KnowledgeMesh(
+            MeshConfig(
+                roots=[memory_dir],
+                state_dir=tmp_path / "state",
+                vector_backend="memory",
+                graph_backend="memory",
+                use_git=False,
+            )
+        )
+        config = MemoryMCPConfig(memory_root=memory_dir)
+        store_tool = MemoryStoreTool(mesh, config)
+
+        res = await store_tool.run(content="hello", memory_type="not-a-real-type")
+        assert res.is_error is True
+        assert "invalid memory_type" in res.error
+        assert list(memory_dir.glob("*.md")) == []
+
+    asyncio.run(run())
+
+
 def test_memory_read_and_write_emit_audit_records(tmp_path: Path) -> None:
     async def run() -> None:
         memory_dir = tmp_path / "memory"

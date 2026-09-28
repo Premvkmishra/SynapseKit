@@ -7,12 +7,17 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..agents.base import BaseTool, ToolResult
 from ..audit.types import EventKind
 from ..ump.parser import UMPWriter
-from ..ump.types import UMPDocument, UMPFrontmatter, UMPProvenance
+from ..ump.types import UMPDocument, UMPFrontmatter, UMPProvenance, UMPType
+
+#: Memory types accepted by ``memory_store`` (mirrors :data:`UMPType`).
+_VALID_MEMORY_TYPES: frozenset[str] = frozenset(
+    {"user", "feedback", "project", "reference", "general"}
+)
 
 if TYPE_CHECKING:
     from ..audit.redact import PIIRedactor
@@ -268,12 +273,20 @@ class MemoryStoreTool(BaseTool):
             )
 
         name = str(kwargs.get("name", "")) or _default_name(content)
-        memory_type = kwargs.get("memory_type", "general")
+        memory_type = str(kwargs.get("memory_type", "general"))
+        if memory_type not in _VALID_MEMORY_TYPES:
+            return ToolResult(
+                output="",
+                error=(
+                    f"memory_store: invalid memory_type '{memory_type}'; "
+                    f"must be one of {sorted(_VALID_MEMORY_TYPES)}"
+                ),
+            )
 
         doc = UMPDocument(
             frontmatter=UMPFrontmatter(
                 name=name,
-                type=memory_type,  # type: ignore[arg-type]
+                type=cast(UMPType, memory_type),
                 scope="global",
                 visibility="local",
                 provenance=UMPProvenance(authors=[actor]),
